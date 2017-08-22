@@ -1,0 +1,83 @@
+#!/usr/bin/env ruby
+
+def usage
+  puts <<-EOF.gsub(/^ */, '')
+    Usage: #{$PROGRAM_NAME} domain.com
+    \tSTDIN: the DNS zone
+
+    Example: #{$PROGRAM_NAME} domain.com
+    \twww 10800 IN CNAME www.google.fr
+  EOF
+  exit 1
+end
+
+usage if ARGV[0] =~ /help/ || ARGV[0].nil?
+domain = ARGV[0]
+terraform_zone_id = domain.tr('.', '-')
+
+puts <<-EOF.gsub(/^\s{2}/, '')
+  resource "aws_route53_zone" "#{terraform_zone_id}" {
+    name = "#{domain}"
+  }\n
+EOF
+
+loop do
+  records = {}
+  interrupted = false
+  begin
+    STDIN.each do |line|
+      break if line =~ /^$/
+      dns_entry = line.split
+      name = dns_entry[0]
+      ttl = dns_entry[1]
+      type = dns_entry[3]
+      value = dns_entry[4..-1].join(' ').tr('"', '')
+
+      records[name] = {} if records[name].nil?
+      records[name][type] = {} if records[name][type].nil?
+      records[name][type][:ttl] = ttl
+      if records[name][type][:value].nil?
+        records[name][type][:value] = value
+      else
+        records[name][type][:value] = [records[name][type][:value]] if records[name][type][:value].class == String
+        records[name][type][:value] << value
+      end
+    end
+  rescue Interrupt
+    interrupted = true
+  end
+
+  records.each do |name, type_h|
+    type_h.each do |type, record|
+      name = '' if name == '@'
+      id = "#{name}-#{terraform_zone_id}".tr('._', '-')
+      id = terraform_zone_id if name.empty?
+      ttl = record[:ttl]
+      value = "\"#{record[:value]}\""
+      if record[:value].class == Array
+        value = "\n"
+        record[:value].each do |v|
+          value += "\"#{v}\",\n".rjust(v.length + 16)
+        end
+        value += ' ' * 10
+      end
+
+      puts <<-EOF.gsub(/^\s{8}/, '')
+        resource "aws_route53_record" "#{id}-#{type}" {
+          zone_id = "${aws_route53_zone.#{terraform_zone_id}.zone_id}"
+          name    = "#{name}"
+          type    = "#{type}"
+          ttl     = "#{ttl}"
+          records = [#{value}]
+        }\n
+      EOF
+    end
+  end
+
+  begin
+    exit 0 if STDIN.eof?
+  rescue Interrupt
+    interrupted = true
+  end
+  exit 0 if interrupted
+end
