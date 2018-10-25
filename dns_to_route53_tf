@@ -1,3 +1,5 @@
+#!/usr/bin/env ruby
+
 #    DNS zone file to AWS route53 terraform is a script to convert from
 #    standard DNS to AWS Route 53 in a Terraform file
 #    Copyright (C) 2017 Marc Millien
@@ -14,8 +16,6 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-#!/usr/bin/env ruby
 
 def usage
   puts <<-EOF.gsub(/^ */, '')
